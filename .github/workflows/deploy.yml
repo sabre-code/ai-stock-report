@@ -1,0 +1,110 @@
+name: Build and Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:   # allow manual trigger
+
+# ── Environment — override these in repo Settings → Variables ─────────────────
+env:
+  AWS_REGION: us-east-1                         # ← change to your region
+  ECR_API_REPO: ai-stock-report-api
+  ECR_STREAMLIT_REPO: ai-stock-report-streamlit
+  ECS_CLUSTER: ai-stock-report
+  API_SERVICE: ai-stock-report-api
+  STREAMLIT_SERVICE: ai-stock-report-streamlit
+
+jobs:
+  build-and-deploy:
+    name: Build → Push → Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC auth (recommended over long-lived keys)
+      contents: read
+
+    steps:
+      # ── 1. Source ───────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. AWS auth ─────────────────────────────────────────────────────────
+      # Option A (recommended): OIDC — no long-lived keys in GitHub secrets.
+      # Create an IAM role with the GitHub OIDC trust policy and set
+      # AWS_ROLE_ARN in repo secrets.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+        # If you prefer static keys instead, replace the block above with:
+        # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        # aws-region: ${{ env.AWS_REGION }}
+
+      # ── 3. ECR login ────────────────────────────────────────────────────────
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── 4. Build & push API image ───────────────────────────────────────────
+      - name: Build and push API image
+        id: build-api
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $REGISTRY/$ECR_API_REPO:$TAG \
+            -t $REGISTRY/$ECR_API_REPO:latest \
+            -f Dockerfile .
+          docker push $REGISTRY/$ECR_API_REPO:$TAG
+          docker push $REGISTRY/$ECR_API_REPO:latest
+          echo "image=$REGISTRY/$ECR_API_REPO:$TAG" >> $GITHUB_OUTPUT
+
+      # ── 5. Build & push Streamlit image ────────────────────────────────────
+      - name: Build and push Streamlit image
+        id: build-streamlit
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $REGISTRY/$ECR_STREAMLIT_REPO:$TAG \
+            -t $REGISTRY/$ECR_STREAMLIT_REPO:latest \
+            -f Dockerfile.streamlit .
+          docker push $REGISTRY/$ECR_STREAMLIT_REPO:$TAG
+          docker push $REGISTRY/$ECR_STREAMLIT_REPO:latest
+          echo "image=$REGISTRY/$ECR_STREAMLIT_REPO:$TAG" >> $GITHUB_OUTPUT
+
+      # ── 6. Force new ECS deployments ───────────────────────────────────────
+      - name: Deploy API service to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $API_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      - name: Deploy Streamlit service to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $STREAMLIT_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      # ── 7. Wait for rollout ─────────────────────────────────────────────────
+      - name: Wait for services to stabilise
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $API_SERVICE $STREAMLIT_SERVICE \
+            --region $AWS_REGION
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployment complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **API image**: ${{ steps.build-api.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Streamlit image**: ${{ steps.build-streamlit.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: $ECS_CLUSTER" >> $GITHUB_STEP_SUMMARY

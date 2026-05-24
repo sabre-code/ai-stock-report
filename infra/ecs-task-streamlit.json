@@ -1,0 +1,49 @@
+{
+    "family": "ai-stock-report-streamlit",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+    "containerDefinitions": [
+        {
+            "name": "streamlit",
+            "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/ai-stock-report-streamlit:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8501,
+                    "protocol": "tcp",
+                    "name": "streamlit-8501"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "API_BASE",
+                    "value": "http://<INTERNAL_ALB_DNS>"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/ai-stock-report-streamlit",
+                    "awslogs-region": "<REGION>",
+                    "awslogs-stream-prefix": "ecs",
+                    "awslogs-create-group": "true"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')\" || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 10,
+                "startPeriod": 20,
+                "retries": 3
+            }
+        }
+    ]
+}

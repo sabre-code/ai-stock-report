@@ -1,0 +1,39 @@
+# Version control
+.git/
+.gitignore
+
+# Secrets — never bake into image
+.env
+*.env
+!.env.example
+
+# Python artefacts
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environment (image uses its own)
+.venv/
+
+# Generated at runtime — mounted via volume / EFS in production
+reports/
+
+# Dev tooling & docs (not needed in image)
+.vscode/
+.idea/
+*.md
+.github/
+infra/
+hello.py
+
+# Docker files themselves (avoid recursive context)
+Dockerfile*
+docker-compose*.yml
+
+# OS noise
+.DS_Store
+Thumbs.db

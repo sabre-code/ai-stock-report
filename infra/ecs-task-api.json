@@ -1,0 +1,80 @@
+{
+    "family": "ai-stock-report-api",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+    "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskRole",
+    "containerDefinitions": [
+        {
+            "name": "api",
+            "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/ai-stock-report-api:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "protocol": "tcp",
+                    "name": "api-8000"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "API_HOST",
+                    "value": "0.0.0.0"
+                },
+                {
+                    "name": "REPORTS_DIR",
+                    "value": "/app/reports"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "GEMINI_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:ai-stock-report/GEMINI_API_KEY"
+                }
+            ],
+            "mountPoints": [
+                {
+                    "containerPath": "/app/reports",
+                    "sourceVolume": "reports-efs",
+                    "readOnly": false
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/ai-stock-report-api",
+                    "awslogs-region": "<REGION>",
+                    "awslogs-stream-prefix": "ecs",
+                    "awslogs-create-group": "true"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 10,
+                "startPeriod": 15,
+                "retries": 3
+            }
+        }
+    ],
+    "volumes": [
+        {
+            "name": "reports-efs",
+            "efsVolumeConfiguration": {
+                "fileSystemId": "<EFS_FILE_SYSTEM_ID>",
+                "rootDirectory": "/",
+                "transitEncryption": "ENABLED",
+                "authorizationConfig": {
+                    "iam": "ENABLED"
+                }
+            }
+        }
+    ]
+}
