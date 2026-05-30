@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +21,28 @@ from app.services.gemini_client import GeminiClient
 from app.services.pdf_generator import generate_pdf
 
 logger = logging.getLogger(__name__)
+
+
+def _finalize_narrative(text: str) -> str:
+    """Normalize model output and avoid visibly cut-off trailing fragments."""
+    clean = text.strip()
+    if not clean:
+        return "No narrative was generated for this section."
+
+    # Remove markdown fences if the model emits them accidentally.
+    clean = clean.replace("```markdown", "").replace("```", "").strip()
+
+    # If the text ends mid-sentence, trim to the last complete sentence.
+    if clean[-1] not in ".!?":
+        last = max(clean.rfind("."), clean.rfind("!"), clean.rfind("?"))
+        if last > 80:
+            clean = clean[: last + 1].rstrip()
+        else:
+            clean = clean.rstrip(" ,;:-") + "."
+
+    # Compress excessive blank lines.
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean
 
 
 def _fmt_num(val: float | None, prefix: str = "", suffix: str = "", decimals: int = 2) -> str:
@@ -103,7 +126,8 @@ async def _write_section(
         "You are a senior equity research analyst writing a professional stock report. "
         "Write clear, concise, evidence-backed prose. Use specific numbers from the data. "
         "Do not use markdown headers. Use paragraph breaks (double newline) to separate thoughts. "
-        "Do not include disclaimers — those appear separately."
+        "Do not include disclaimers — those appear separately. "
+        "End with a complete final sentence (never stop mid-sentence)."
     )
     prompt = (
         f"Research data:\n{context}\n\n"
@@ -111,7 +135,8 @@ async def _write_section(
         f"Instructions: {instruction}\n"
         f"Keep it to 2-4 focused paragraphs."
     )
-    return await gemini.generate(prompt, system=system, temperature=0.35, max_output_tokens=800)
+    raw = await gemini.generate(prompt, system=system, temperature=0.35, max_output_tokens=1200)
+    return _finalize_narrative(raw)
 
 
 class ReportAgent(BaseAgent):

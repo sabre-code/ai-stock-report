@@ -19,6 +19,7 @@ class JobRecord:
     job_id: str
     query: str
     ticker: str
+    company_name: str | None = None
     status: JobStatus = JobStatus.PENDING
     pdf_path: Path | None = None
     error: str | None = None
@@ -32,9 +33,20 @@ class JobStore:
         self._jobs: dict[str, JobRecord] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, job_id: str, query: str, ticker: str) -> JobRecord:
+    async def create(
+        self,
+        job_id: str,
+        query: str,
+        ticker: str,
+        company_name: str | None = None,
+    ) -> JobRecord:
         async with self._lock:
-            record = JobRecord(job_id=job_id, query=query, ticker=ticker)
+            record = JobRecord(
+                job_id=job_id,
+                query=query,
+                ticker=ticker,
+                company_name=company_name,
+            )
             self._jobs[job_id] = record
             return record
 

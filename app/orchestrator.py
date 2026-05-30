@@ -60,7 +60,12 @@ class StockReportOrchestrator:
                 else:
                     ticker, company_name = await resolve_ticker(query, self._gemini)
 
-                await self._job_store.create(job_id, query, ticker)
+                await self._job_store.create(
+                    job_id=job_id,
+                    query=query,
+                    ticker=ticker,
+                    company_name=company_name,
+                )
                 await emit(ProgressEvent(stage="parse", message=f"Identified: {company_name} ({ticker})"))
 
                 # ── 2. Research ───────────────────────────────────────────

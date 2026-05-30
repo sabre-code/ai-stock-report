@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime
 
@@ -187,12 +188,13 @@ if submitted:
             )
             pdf_resp.raise_for_status()
             pdf_bytes = pdf_resp.content
-            # Try to derive a nice filename from the events
-            ticker_name = params.get("ticker", "stock").upper()
+            content_disposition = pdf_resp.headers.get("content-disposition", "")
+            match = re.search(r'filename="?([^";]+)"?', content_disposition)
+            download_name = match.group(1) if match else "stock_report.pdf"
             download_placeholder.download_button(
                 label="⬇️ Download PDF Report",
                 data=pdf_bytes,
-                file_name=f"{ticker_name}_stock_report.pdf",
+                file_name=download_name,
                 mime="application/pdf",
                 use_container_width=True,
             )

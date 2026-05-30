@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -13,6 +15,18 @@ from app.services.job_store import JobStatus, get_job_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _safe_filename_part(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_")
+    return cleaned or "stock"
+
+
+def _build_download_filename(company_name: str | None, ticker: str) -> str:
+    date_part = datetime.utcnow().strftime("%Y-%m-%d")
+    company_part = _safe_filename_part(company_name or ticker)
+    ticker_part = _safe_filename_part(ticker.upper())
+    return f"{company_part}_{ticker_part}_stock_report_{date_part}.pdf"
 
 
 @router.post("", response_model=ReportResponse, status_code=202)
@@ -93,5 +107,5 @@ async def download_report(job_id: str):
     return FileResponse(
         path=str(record.pdf_path),
         media_type="application/pdf",
-        filename=f"{record.ticker}_stock_report.pdf",
+        filename=_build_download_filename(record.company_name, record.ticker),
     )

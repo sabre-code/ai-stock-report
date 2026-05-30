@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -107,6 +108,13 @@ class _ColoredRect(Flowable):
         self.canv.rect(0, 0, self.width, self.height, fill=1, stroke=0)
 
 
+def _to_reportlab_markup(text: str) -> str:
+    """Convert a small markdown subset to ReportLab-safe inline markup."""
+    converted = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    # Drop stray markdown markers that could break XML-ish parsing.
+    return converted.replace("**", "")
+
+
 def _chart_image(png_bytes: bytes, max_width: float = PAGE_W - 2 * MARGIN) -> Image | None:
     if not png_bytes:
         return None
@@ -141,15 +149,30 @@ def generate_pdf(artifact: ReportArtifact, sources: list[str] | None = None) -> 
     content_w = PAGE_W - 2 * MARGIN
 
     # ── Cover page ─────────────────────────────────────────────────────────────
-    story.append(_ColoredRect(content_w, 8 * cm, _NAVY))
-    story.append(Spacer(1, 0.5 * cm))
-    story.append(Paragraph(artifact.company_name, s["cover_title"]))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(Paragraph(f"Ticker: {artifact.ticker}", s["cover_sub"]))
-    story.append(Paragraph(
-        f"Report generated: {datetime.now().strftime('%B %d, %Y %H:%M UTC')}",
-        s["cover_sub"],
-    ))
+    cover_table = Table(
+        [[
+            [
+                Paragraph(artifact.company_name, s["cover_title"]),
+                Spacer(1, 0.25 * cm),
+                Paragraph(f"Ticker: {artifact.ticker}", s["cover_sub"]),
+                Paragraph(
+                    f"Report generated: {datetime.utcnow().strftime('%B %d, %Y')}",
+                    s["cover_sub"],
+                ),
+            ]
+        ]],
+        colWidths=[content_w],
+    )
+    cover_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _NAVY),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 26),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 26),
+    ]))
+    story.append(cover_table)
     story.append(Spacer(1, 0.8 * cm))
     story.append(HRFlowable(width="100%", thickness=2, color=_BLUE))
     story.append(Spacer(1, 0.4 * cm))
@@ -170,11 +193,7 @@ def generate_pdf(artifact: ReportArtifact, sources: list[str] | None = None) -> 
             para_text = para_text.strip()
             if not para_text:
                 continue
-            # Convert markdown bold (**text**) to ReportLab <b>
-            para_text = para_text.replace("**", "<b>", 1)
-            while "**" in para_text:
-                para_text = para_text.replace("**", "</b>", 1).replace("**", "<b>", 1)
-            story.append(Paragraph(para_text, s["body"]))
+            story.append(Paragraph(_to_reportlab_markup(para_text), s["body"]))
 
         # Embedded chart
         if section.chart_png:
